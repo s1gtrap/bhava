@@ -1,5 +1,3 @@
-use std::marker::PhantomData;
-
 use wasm_bindgen_test::*;
 
 use yew::prelude::*;
@@ -9,21 +7,6 @@ wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
 struct App<C>(C::Properties)
 where
     C: Component;
-
-struct Handle<C>(AppHandle<App<C>>)
-where
-    C: Component,
-    C::Properties: Clone + std::fmt::Debug;
-
-impl<C> Handle<C>
-where
-    C: Component,
-    C::Properties: Clone + std::fmt::Debug,
-{
-    fn set_props(&self, p: C::Properties) {
-        self.0.send_message(p);
-    }
-}
 
 impl<C> Component for App<C>
 where
@@ -37,12 +20,12 @@ where
         App(ctx.props().clone())
     }
 
-    fn update(&mut self, ctx: &Context<Self>, msg: Self::Message) -> bool {
+    fn update(&mut self, _ctx: &Context<Self>, msg: Self::Message) -> bool {
         self.0 = msg;
         true
     }
 
-    fn view(&self, ctx: &Context<Self>) -> Html {
+    fn view(&self, _ctx: &Context<Self>) -> Html {
         html! {
             <C ..self.0.clone() />
         }
