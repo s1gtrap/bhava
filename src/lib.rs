@@ -164,7 +164,7 @@ impl NodeIter {
     }
 }
 
-#[derive(Debug, PartialEq, Properties)]
+#[derive(Clone, Debug, PartialEq, Properties)]
 pub struct Props {
     pub content: String,
     pub spans: Vec<(Mask, Mask, String)>,
@@ -276,8 +276,6 @@ impl Editor {
             node,
         }
     }
-
-    //fn add(&mut self, h: (Mask, Mask, String), ctx: &Context<Self>) {}
 }
 
 impl Component for Editor {
@@ -287,7 +285,6 @@ impl Component for Editor {
     fn create(_ctx: &Context<Self>) -> Self {
         Editor {
             div: NodeRef::default(),
-            //spans: vec![],
         }
     }
 
@@ -316,7 +313,8 @@ impl Component for Editor {
         self.merge(&ctx.props().spans);
     }
 
-    fn view(&self, _ctx: &Context<Self>) -> Html {
+    fn view(&self, ctx: &Context<Self>) -> Html {
+        log::info!("render(props={:?})", ctx.props());
         html! {
             <div ref={self.div.clone()} contenteditable="true"></div>
         }
