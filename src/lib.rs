@@ -6,6 +6,8 @@ use web_sys::{Element, Node};
 
 use yew::prelude::*;
 
+pub mod utils;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Mask {
     Byte(usize),
@@ -13,7 +15,14 @@ pub enum Mask {
 }
 
 impl Mask {
-    fn ceil(&self) -> usize {
+    pub(crate) fn floor(&self) -> usize {
+        match self {
+            Mask::Byte(i) => *i,
+            Mask::Bit(s, _, _) => *s,
+        }
+    }
+
+    pub(crate) fn ceil(&self) -> usize {
         match self {
             Mask::Byte(i) => *i,
             Mask::Bit(s, l, _) => s + l,
@@ -177,7 +186,7 @@ pub struct Editor {
 
 impl Editor {
     fn merge(&mut self, spans: &[(Mask, Mask, String)]) {
-        log::trace!("Editor::merge({self:?}, {spans:?})");
+        log::info!("Editor::merge({self:?}, {spans:?})");
 
         let mut edges: Vec<(Mask, Vec<(bool, String)>)> = vec![];
         for span in spans {
@@ -205,6 +214,8 @@ impl Editor {
         }
 
         let mut q: VecDeque<_> = edges.iter().collect();
+
+        log::debug!("edges={:?}", q);
 
         let mut last = 0;
         let mut o = 0;
