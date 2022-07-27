@@ -2,6 +2,10 @@ use wasm_bindgen_test::*;
 
 use super::Mask;
 
+fn to_vec(n: web_sys::NodeList) -> Vec<web_sys::Node> {
+    (0..n.length()).map(|i| n.get(i).unwrap()).collect()
+}
+
 pub fn children<N>(n: N) -> Vec<(web_sys::Node, usize, usize)>
 where
     N: AsRef<web_sys::Node>,
@@ -66,6 +70,149 @@ fn test_insert_after() {
     );
 }
 
+fn depth<N>(n: N) -> usize
+where
+    N: AsRef<web_sys::Node>,
+{
+    match n.as_ref().node_type() {
+        web_sys::Node::TEXT_NODE => 0,
+        web_sys::Node::ELEMENT_NODE => to_vec(n.as_ref().child_nodes())
+            .iter()
+            .map(depth)
+            .max()
+            .map(|d| d + 1)
+            .unwrap_or(0),
+        t => todo!("nodeType {t}"),
+    }
+}
+
+#[wasm_bindgen_test]
+fn test_depth() {
+    let document = web_sys::window().unwrap().document().unwrap();
+
+    let text = document.create_text_node("Hello, world!");
+    assert_eq!(depth(text), 0);
+
+    let div = document.create_element("DIV").unwrap();
+    assert_eq!(depth(div), 0);
+
+    let div = document.create_element("DIV").unwrap();
+    div.set_inner_html("Hello, world!");
+    assert_eq!(depth(div), 1);
+
+    let div = document.create_element("DIV").unwrap();
+    div.set_inner_html("<span>Hello, world!</span>");
+
+    let div = document.create_element("DIV").unwrap();
+    div.set_inner_html("<span>Hell</span><span>o, wor</span><span>ld!</span>");
+    assert_eq!(depth(div), 2);
+
+    let div = document.create_element("DIV").unwrap();
+    div.set_inner_html("<span>Hell<span>o, wor</span>ld!</span>");
+    assert_eq!(depth(div), 3);
+}
+
+fn split_at<N>(n: N, o: usize)
+where
+    N: AsRef<web_sys::Node>,
+{
+    let document = web_sys::window().unwrap().document().unwrap();
+
+    let n = n.as_ref();
+
+    match n.node_type() {
+        web_sys::Node::TEXT_NODE => {
+            if o == 0 {
+                panic!("offset == 0");
+            }
+
+            if o >= n.text_content().unwrap().len() {
+                panic!("offset >= len of textContent");
+            }
+
+            let tail_str = &n.text_content().unwrap()[o..];
+
+            n.set_text_content(Some(&n.text_content().unwrap()[..o]));
+
+            let tail = document.create_text_node(tail_str);
+            insert_after(n, tail);
+        }
+        web_sys::Node::ELEMENT_NODE => {
+            assert!(depth(n) <= 1);
+
+            let head_str = &n.text_content().unwrap()[..o];
+            let tail_str = &n.text_content().unwrap()[o..];
+
+            n.set_text_content(Some(head_str));
+
+            let tail = document.create_element(&n.node_name()).unwrap();
+            tail.set_text_content(Some(tail_str));
+            insert_after(n, tail);
+        }
+        t => todo!("nodeType {t}"),
+    }
+}
+
+#[wasm_bindgen_test]
+fn test_split_at() {
+    let document = web_sys::window().unwrap().document().unwrap();
+
+    let parent = document.create_element("DIV").unwrap();
+    let child0 = document.create_text_node("Hello, world!");
+    parent.append_child(&child0).unwrap();
+    split_at(&child0, 1);
+    let v = to_vec(parent.child_nodes());
+    assert_eq!(v[0].text_content().unwrap(), "H");
+    assert_eq!(v[1].text_content().unwrap(), "ello, world!");
+
+    let parent = document.create_element("DIV").unwrap();
+    let child0 = document.create_text_node("Hello, world!");
+    parent.append_child(&child0).unwrap();
+    split_at(&child0, 6);
+    let v = to_vec(parent.child_nodes());
+    assert_eq!(v[0].text_content().unwrap(), "Hello,");
+    assert_eq!(v[1].text_content().unwrap(), " world!");
+
+    let parent = document.create_element("DIV").unwrap();
+    let child0 = document.create_element("SPAN").unwrap();
+    child0.set_text_content(Some("Hello, world!"));
+    parent.append_child(&child0).unwrap();
+    split_at(&child0, 9);
+    let v = to_vec(parent.child_nodes());
+    assert_eq!(v[0].text_content().unwrap(), "Hello, wo");
+    assert_eq!(v[1].text_content().unwrap(), "rld!");
+
+    let parent = document.create_element("DIV").unwrap();
+    let child0 = document.create_element("SPAN").unwrap();
+    child0.set_text_content(Some("Hello, world!"));
+    parent.append_child(&child0).unwrap();
+    split_at(&child0, 12);
+    let v = to_vec(parent.child_nodes());
+    assert_eq!(v[0].text_content().unwrap(), "Hello, world");
+    assert_eq!(v[1].text_content().unwrap(), "!");
+}
+
+/*#[wasm_bindgen_test]
+fn test_split_at_zero() {
+    let document = web_sys::window().unwrap().document().unwrap();
+
+    let parent = document.create_element("DIV").unwrap();
+    let child0 = document.create_text_node("Hello, world!");
+    parent.append_child(&child0).unwrap();
+    split_at(&child0, 0);
+}
+
+#[wasm_bindgen_test]
+#[should_panic]
+fn test_split_at_len() {
+    let document = web_sys::window().unwrap().document().unwrap();
+
+    let parent = document.create_element("DIV").unwrap();
+    let child0 = document.create_text_node("Hello, world!");
+    parent.append_child(&child0).unwrap();
+    split_at(&child0, 13);
+}*/
+
 fn insert_span_split_at<N>(n: N, m: Mask)
 where
     N: AsRef<web_sys::Node>,
@@ -95,7 +242,7 @@ where
     }
 }
 
-#[wasm_bindgen_test]
+/*#[wasm_bindgen_test]
 fn test_insert_span_split_at() {
     fn to_vec(n: web_sys::NodeList) -> Vec<web_sys::Node> {
         (0..n.length()).map(|i| n.get(i).unwrap()).collect()
@@ -142,7 +289,7 @@ fn test_insert_span_split_at() {
     assert_eq!(v[1].text_content().unwrap(), "llo");
     assert_eq!(v[2].node_type(), web_sys::Node::TEXT_NODE);
     assert_eq!(v[2].text_content().unwrap(), ", world!");
-}
+}*/
 
 fn insert_span_split<N>(n: N, s: (Mask, Mask))
 where

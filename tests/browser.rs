@@ -194,7 +194,7 @@ fn test_editor_init() {
     );
 }
 
-#[wasm_bindgen_test]
+/*#[wasm_bindgen_test]
 fn test_editor_changes() {
     assert_eq!(
         render_with_changes::<bhava::Editor, _>(
@@ -267,4 +267,4 @@ fn test_editor_changes() {
         ),
         r#"<div contenteditable="true"><span>Hello</span><span class="">, w</span><span class="">orld!</span></div>"#,
     );*/
-}
+}*/
