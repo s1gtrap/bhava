@@ -634,6 +634,20 @@ fn test_insert_span() {
         div.inner_html(),
         r#"Lorem ip<span class="test2">sum</span>!"#,
     );
+
+    let document = web_sys::window().unwrap().document().unwrap();
+    let div = document.create_element("DIV").unwrap();
+    div.set_text_content(Some("Lorem ipsum!"));
+    insert_span(&div, ("test3".into(), Mask::Byte(1), Mask::Byte(11)));
+    assert_eq!(
+        div.inner_html(),
+        r#"L<span class="test3">orem ipsum</span>!"#,
+    );
+    insert_span(&div, ("test4".into(), Mask::Byte(2), Mask::Byte(10)));
+    assert_eq!(
+        div.inner_html(),
+        r#"L<span class="test3">o</span><span class="test3 test4">rem ipsu</span><span class="test3">m</span>!"#,
+    );
 }
 
 /*fn tree_head_count(div: &web_sys::HtmlDivElement) -> usize {
