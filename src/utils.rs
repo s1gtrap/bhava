@@ -6,6 +6,8 @@ use web_sys::{Element, Node, Text};
 
 use super::Mask;
 
+wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
+
 fn to_vec(n: web_sys::NodeList) -> Vec<web_sys::Node> {
     (0..n.length()).map(|i| n.get(i).unwrap()).collect()
 }
@@ -32,14 +34,32 @@ where
         .collect()
 }
 
+fn content<N>(n: N) -> Result<String, String>
+where
+    N: AsRef<Node>,
+{
+    n.as_ref()
+        .dyn_ref::<Element>()
+        .map(Element::outer_html)
+        .ok_or_else(|| n.as_ref().text_content().unwrap())
+}
+
 fn insert_after<N, M>(n: N, m: M)
 where
     N: AsRef<web_sys::Node>,
     M: AsRef<web_sys::Node>,
 {
+    web_sys::console::log_1(&wasm_bindgen::JsValue::from(format!(
+        "insert_after({:?}, {:?})",
+        content(&n),
+        content(&m),
+    )));
     n.as_ref()
         .parent_node()
-        .unwrap()
+        .expect(&format!(
+            "{:?} has no parent!",
+            (n.as_ref().text_content(), n.as_ref().parent_node())
+        ))
         .insert_before(m.as_ref(), n.as_ref().next_sibling().as_ref())
         .unwrap();
 }
@@ -72,6 +92,13 @@ fn test_insert_after() {
         &parent.child_nodes().get(1).unwrap(),
         <web_sys::Element as AsRef<web_sys::Node>>::as_ref(&child1),
     );
+    assert_eq!(
+        &parent.child_nodes().get(2).unwrap(),
+        <Text as AsRef<Node>>::as_ref(child2.as_ref()),
+    );
+
+    let child2p5 = document.create_text_node("dummy");
+    insert_after(&child1, &child2);
 }
 
 fn depth<N>(n: N) -> usize
@@ -120,21 +147,38 @@ fn split_at<N>(n: N, o: usize) -> Vec<web_sys::Node>
 where
     N: AsRef<web_sys::Node>,
 {
+    web_sys::console::log_1(&wasm_bindgen::JsValue::from(format!(
+        "split_at({:?}, {:?})",
+        content(&n),
+        o
+    )));
     let document = web_sys::window().unwrap().document().unwrap();
 
     let n = n.as_ref();
 
     if o == 0 || o >= n.text_content().unwrap().len() {
-        return vec![n.clone()];
+        let ret = vec![n.clone()];
+        web_sys::console::log_1(&wasm_bindgen::JsValue::from(format!(
+            "return {:?}",
+            ret.iter().map(content).collect::<Vec<_>>()
+        )));
+        return ret;
     }
 
-    match n.node_type() {
+    let ret = match n.node_type() {
         web_sys::Node::TEXT_NODE => {
             let tail_str = &n.text_content().unwrap()[o..];
 
             n.set_text_content(Some(&n.text_content().unwrap()[..o]));
 
             let tail = document.create_text_node(tail_str);
+            web_sys::console::log_1(&wasm_bindgen::JsValue::from(format!(
+                "split_at({:?}, {:?}) calling insert_at({:?}, {:?}) b/c TEXT_NODE",
+                content(&n),
+                o,
+                content(&n),
+                content(&tail),
+            )));
             insert_after(n, &tail);
 
             let tail: &web_sys::Node = web_sys::Node::as_ref(&tail);
@@ -150,13 +194,25 @@ where
 
             let tail = document.create_element(&n.node_name()).unwrap();
             tail.set_text_content(Some(tail_str));
+            web_sys::console::log_1(&wasm_bindgen::JsValue::from(format!(
+                "split_at({:?}, {:?}) calling insert_at({:?}, {:?}) b/c ELEMENT_NODE",
+                content(&n),
+                o,
+                content(&n),
+                content(&tail),
+            )));
             insert_after(n, &tail);
 
             let tail: &web_sys::Node = web_sys::Node::as_ref(&tail);
             vec![n.clone(), tail.clone()]
         }
         t => todo!("nodeType {t}"),
-    }
+    };
+    web_sys::console::log_1(&wasm_bindgen::JsValue::from(format!(
+        "return {:?}",
+        ret.iter().map(content).collect::<Vec<_>>()
+    )));
+    ret
 }
 
 #[wasm_bindgen_test]
@@ -281,14 +337,33 @@ fn test_split_at_len() {
     );
 }
 
-fn upgrade<N>(n: N, s: &str) -> web_sys::Node
+fn upgrade<N>(n: N, s: &str) -> Element
 where
     N: AsRef<web_sys::Node>,
 {
+    web_sys::console::log_1(&wasm_bindgen::JsValue::from(format!(
+        "upgrade({:?})",
+        content(&n),
+    )));
     let document = web_sys::window().unwrap().document().unwrap();
 
     let n = n.as_ref();
-    if n.node_type() != Node::TEXT_NODE {
+    match n.node_type() {
+        Node::ELEMENT_NODE => n.clone().dyn_into::<Element>().unwrap().clone(),
+        Node::TEXT_NODE => {
+            let n: &Text = n.dyn_ref::<Text>().unwrap();
+
+            let new = document.create_element(&s).unwrap();
+            new.set_text_content(Some(&n.text_content().unwrap()));
+            insert_after(&n, &new);
+
+            n.parent_node().unwrap().remove_child(&n).unwrap();
+
+            new
+        }
+        _ => todo!(),
+    }
+    /*if n.node_type() != Node::TEXT_NODE {
         panic!("trying to upgrade {} node", n.node_type());
     }
 
@@ -300,7 +375,7 @@ where
 
     n.parent_node().unwrap().remove_child(&n).unwrap();
 
-    <Element as AsRef<Node>>::as_ref(&new).clone()
+    new*/
 }
 
 #[wasm_bindgen_test]
@@ -316,7 +391,7 @@ fn test_upgrade() {
     el.dyn_ref::<Element>().unwrap().class_list();
 }
 
-fn insert_span_split_at<N>(n: N, m: Mask)
+fn insert_span_split_at<N>(n: N, m: Mask) -> Node
 where
     N: AsRef<web_sys::Node>,
 {
@@ -332,12 +407,14 @@ where
                     let v = split_at(n, m);
                     assert_eq!(v.len(), 2, "tried to split on edge");
                     let tail = upgrade(&v[1], "span");
-                    break;
+                    return <Element as AsRef<Node>>::as_ref(&tail).clone();
                 }
             }
             Mask::Bit(..) => todo!("split bit mask"),
         }
     }
+
+    unreachable!()
 }
 
 #[wasm_bindgen_test]
@@ -391,83 +468,172 @@ fn test_insert_span_split_at() {
     assert_eq!(v[2].text_content().unwrap(), ", world!");
 }
 
-fn insert_span_split<N>(n: N, s: (Mask, Mask))
+fn find_edge<N>(n: N, s: Mask) -> Option<(usize, usize, Node)>
 where
     N: AsRef<web_sys::Node>,
 {
-    let document = web_sys::window().unwrap().document().unwrap();
-
-    let n = n.as_ref().child_nodes();
-    let mut o = 0;
-
-    for i in 0..n.length() {
-        let n = n.get(i).unwrap();
-        if o < s.1.floor() && s.1.floor() < o + n.text_content().unwrap().len() {
-            // span begins inside n => split n
-            if n.node_type() == web_sys::Node::TEXT_NODE {
-                // split text node
-                insert_span_split_at(n, s.1);
-                break;
-                //insert_span_split_at(n, s.2);
-            } else if n.node_type() == web_sys::Node::ELEMENT_NODE && n.node_name() == "SPAN" {
+    let n = n.as_ref();
+    let children = to_vec(n.child_nodes());
+    children.iter().enumerate().find_map({
+        let mut o = 0;
+        move |(i, n)| {
+            let l = n.text_content().unwrap().len();
+            if o < s.floor() && s.floor() < o + l {
+                Some((i, o, n.clone()))
+            } else {
+                o += l;
+                None
             }
         }
-    }
+    })
 }
 
 #[wasm_bindgen_test]
-fn test_insert_span_split() {
-    /*let document = web_sys::window().unwrap().document().unwrap();
+fn test_find_edge() {
+    let document = web_sys::window().unwrap().document().unwrap();
+
     let div = document.create_element("DIV").unwrap();
-    div.set_text_content(Some("Hello, world!"));
-
-    insert_span_split(&div, (Mask::Byte(3), Mask::Byte(10)));
-
+    let text = document.create_text_node("Hello, world!");
+    div.append_child(&text).unwrap();
+    assert_eq!(find_edge(&div, Mask::Byte(0)).as_ref(), None);
     assert_eq!(
-        div.child_nodes().get(0).unwrap().text_content().unwrap(),
-        "Hel",
+        find_edge(&div, Mask::Byte(2)),
+        Some((0, 0, <Text as AsRef<Node>>::as_ref(&text).clone()))
     );
+    assert_eq!(find_edge(&div, Mask::Byte(13)).as_ref(), None);
+
+    let div = document.create_element("DIV").unwrap();
+    let text = document.create_text_node("Hello, w");
+    div.append_child(&text).unwrap();
+    let span = document.create_element("SPAN").unwrap();
+    span.set_text_content(Some("orld!"));
+    div.append_child(&span).unwrap();
+    assert_eq!(find_edge(&div, Mask::Byte(0)), None);
     assert_eq!(
-        div.child_nodes().get(1).unwrap().text_content().unwrap(),
-        "lo, wor",
+        find_edge(&div, Mask::Byte(5)),
+        Some((0, 0, <Text as AsRef<Node>>::as_ref(&text).clone()))
     );
+    assert_eq!(find_edge(&div, Mask::Byte(8)), None);
     assert_eq!(
-        div.child_nodes().get(2).unwrap().text_content().unwrap(),
-        "ld!",
-    );*/
+        find_edge(&div, Mask::Byte(10)),
+        Some((1, 8, <Element as AsRef<Node>>::as_ref(&span).clone())),
+    );
+    assert_eq!(find_edge(&div, Mask::Byte(13)), None);
 }
 
 fn insert_span<N>(n: N, s: (String, Mask, Mask))
 where
     N: AsRef<web_sys::Node>,
 {
-    let n = n.as_ref().child_nodes();
-    let mut o = 0;
+    web_sys::console::log_1(&wasm_bindgen::JsValue::from(format!(
+        "insert_span({:?}, {:?})",
+        content(&n),
+        s,
+    )));
+    let n = n.as_ref();
+    let children = to_vec(n.child_nodes());
+    let mut inner = vec![];
+    if let Some((i, o, m)) = find_edge(n, s.1) {
+        // split starting edge
+        split_at(m, s.1.floor());
+        inner.push(i + 1); // begin span on next elem
+    }
 
-    for i in 0..n.length() {
-        let n = n.get(i).unwrap();
-        if o < s.1.floor() && s.1.floor() < o + n.text_content().unwrap().len() {
+    println!(
+        "{:?}",
+        (
+            n.dyn_ref::<Element>().unwrap().outer_html(),
+            to_vec(n.child_nodes())
+        )
+    );
+    /*panic!(
+        "{:?}",
+        (
+            n.dyn_ref::<Element>().unwrap().outer_html(),
+            to_vec(n.child_nodes())
+        )
+    );*/
+    if let Some((i, o, m)) = find_edge(n, s.2) {
+        // split starting edge
+        /*panic!(
+            "{:?}",
+            (
+                m.parent_node()
+                    .unwrap()
+                    .dyn_ref::<Element>()
+                    .map(Element::outer_html)
+                    .or_else(|| m.text_content()),
+                m.node_type(),
+                m.dyn_ref::<Element>()
+                    .map(Element::outer_html)
+                    .or_else(|| m.text_content()),
+                m,
+                s.2.floor()
+            )
+        );*/
+        web_sys::console::log_1(&wasm_bindgen::JsValue::from(format!(
+            "insert_span({:?}, {:?})",
+            content(n),
+            s,
+        )));
+        split_at(m, s.2.floor() - o);
+        inner.push(i);
+    }
+
+    let mut children = to_vec(n.child_nodes());
+    web_sys::console::log_1(&wasm_bindgen::JsValue::from(format!(
+        "upgrading {:?}",
+        inner
+    )));
+    for i in inner {
+        let el = upgrade(&children[i], "SPAN");
+        el.class_list().add_1(&s.0);
+        children = to_vec(n.child_nodes());
+    }
+
+    /*let n = n.as_ref();
+    let mut o = 0;
+    let mut e = n.child_nodes().length();
+    let mut i = 0;
+
+    while i < e {
+        let c = n.child_nodes().get(i).unwrap();
+        if o < s.1.floor() && s.1.floor() < o + c.text_content().unwrap().len() {
             // span begins inside n => split n
-            if n.node_type() == web_sys::Node::TEXT_NODE {
+            if c.node_type() == web_sys::Node::TEXT_NODE {
                 // split text node
-            } else if n.node_type() == web_sys::Node::ELEMENT_NODE && n.node_name() == "SPAN" {
+                insert_span_split_at(n, s.1);
+                e = n.child_nodes().length();
+            } else if c.node_type() == web_sys::Node::ELEMENT_NODE && c.node_name() == "SPAN" {
+                insert_span_split_at(c, s.2 - o);
+                e = n.child_nodes().length();
+            } else {
+                // not ending in this elem
             }
         }
-    }
+        i += 1;
+    }*/
 }
 
 #[wasm_bindgen_test]
 fn test_insert_span() {
-    /*let document = web_sys::window().unwrap().document().unwrap();
+    let document = web_sys::window().unwrap().document().unwrap();
     let div = document.create_element("DIV").unwrap();
-    div.set_text_content(Some("Hello, world!"));
-
-    insert_span(&div, ("test".into(), Mask::Byte(2), Mask::Byte(4)));
-
+    div.set_text_content(Some("Lorem ipsum!"));
+    insert_span(&div, ("test".into(), Mask::Byte(3), Mask::Byte(4)));
     assert_eq!(
         div.inner_html(),
-        r#"He<span class="test">ll</span>o, world!"#,
-    );*/
+        r#"Lor<span class="test">e</span>m ipsum!"#,
+    );
+
+    let document = web_sys::window().unwrap().document().unwrap();
+    let div = document.create_element("DIV").unwrap();
+    div.set_text_content(Some("Lorem ipsum!"));
+    insert_span(&div, ("test2".into(), Mask::Byte(8), Mask::Byte(11)));
+    assert_eq!(
+        div.inner_html(),
+        r#"Lorem ip<span class="test2">sum</span>!"#,
+    );
 }
 
 /*fn tree_head_count(div: &web_sys::HtmlDivElement) -> usize {
