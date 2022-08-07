@@ -355,19 +355,6 @@ where
         }
         _ => todo!(),
     }
-    /*if n.node_type() != Node::TEXT_NODE {
-        panic!("trying to upgrade {} node", n.node_type());
-    }
-
-    let n: &Text = n.dyn_ref::<Text>().unwrap();
-
-    let new = document.create_element(&s).unwrap();
-    new.set_text_content(Some(&n.text_content().unwrap()));
-    insert_after(&n, &new);
-
-    n.parent_node().unwrap().remove_child(&n).unwrap();
-
-    new*/
 }
 
 #[wasm_bindgen_test]
@@ -445,7 +432,7 @@ fn test_find_edge() {
     assert_eq!(find_edge(&div, Mask::Byte(13)), None);
 }
 
-fn insert_span<N>(n: N, s: (String, Mask, Mask))
+pub fn insert_span<N>(n: N, s: (String, Mask, Mask))
 where
     N: AsRef<web_sys::Node>,
 {
@@ -483,22 +470,6 @@ where
     );*/
     if let Some((i, o, m)) = find_edge(n, s.2) {
         // split starting edge
-        /*panic!(
-            "{:?}",
-            (
-                m.parent_node()
-                    .unwrap()
-                    .dyn_ref::<Element>()
-                    .map(Element::outer_html)
-                    .or_else(|| m.text_content()),
-                m.node_type(),
-                m.dyn_ref::<Element>()
-                    .map(Element::outer_html)
-                    .or_else(|| m.text_content()),
-                m,
-                s.2.floor()
-            )
-        );*/
         web_sys::console::log_1(&wasm_bindgen::JsValue::from(format!(
             "insert_span({:?}, {:?})",
             content(n),
@@ -530,6 +501,108 @@ fn test_insert_span() {
         div.inner_html(),
         r#"Lor<span class="test">e</span>m ipsum!"#,
     );
+
+    let div = document.create_element("DIV").unwrap();
+    div.set_text_content(Some("Lorem ipsum!"));
+    insert_span(&div, ("test2".into(), Mask::Byte(8), Mask::Byte(11)));
+    assert_eq!(
+        div.inner_html(),
+        r#"Lorem ip<span class="test2">sum</span>!"#,
+    );
+
+    let div = document.create_element("DIV").unwrap();
+    div.set_text_content(Some("Lorem ipsum!"));
+    insert_span(&div, ("test3".into(), Mask::Byte(1), Mask::Byte(11)));
+    assert_eq!(
+        div.inner_html(),
+        r#"L<span class="test3">orem ipsum</span>!"#,
+    );
+    insert_span(&div, ("test4".into(), Mask::Byte(2), Mask::Byte(10)));
+    assert_eq!(
+        div.inner_html(),
+        r#"L<span class="test3">o</span><span class="test3 test4">rem ipsu</span><span class="test3">m</span>!"#,
+    );
+    insert_span(&div, ("test5".into(), Mask::Byte(4), Mask::Byte(7)));
+    assert_eq!(
+        div.inner_html(),
+        r#"L<span class="test3">o</span><span class="test3 test4">re</span><span class="test3 test4 test5">m i</span><span class="test3 test4">psu</span><span class="test3">m</span>!"#,
+    );
+
+    let div = document.create_element("DIV").unwrap();
+    div.set_text_content(Some("Lorem ipsum!"));
+    insert_span(&div, ("test3".into(), Mask::Byte(6), Mask::Byte(7)));
+    assert_eq!(
+        div.inner_html(),
+        r#"Lorem <span class="test3">i</span>psum!"#,
+    );
+    insert_span(&div, ("test2".into(), Mask::Byte(4), Mask::Byte(9)));
+    assert_eq!(
+        div.inner_html(),
+        r#"Lore<span class="test2">m </span><span class="test3 test2">i</span><span class="test2">ps</span>um!"#,
+    );
+    insert_span(&div, ("test1".into(), Mask::Byte(1), Mask::Byte(11)));
+    assert_eq!(
+        div.inner_html(),
+        r#"L<span class="test1">ore</span><span class="test2 test1">m </span><span class="test3 test2 test1">i</span><span class="test2 test1">ps</span><span class="test1">um</span>!"#,
+    );
+
+    let div = document.create_element("DIV").unwrap();
+    div.set_text_content(Some("Lorem ipsum dolor sit amet"));
+    insert_span(&div, ("a".into(), Mask::Byte(4), Mask::Byte(7)));
+    assert_eq!(
+        div.inner_html(),
+        r#"Lore<span class="a">m i</span>psum dolor sit amet"#,
+    );
+    insert_span(&div, ("b".into(), Mask::Byte(11), Mask::Byte(15)));
+    assert_eq!(
+        div.inner_html(),
+        r#"Lore<span class="a">m i</span>psum<span class="b"> dol</span>or sit amet"#,
+    );
+    insert_span(&div, ("c".into(), Mask::Byte(18), Mask::Byte(23)));
+    assert_eq!(
+        div.inner_html(),
+        r#"Lore<span class="a">m i</span>psum<span class="b"> dol</span>or <span class="c">sit a</span>met"#,
+    );
+
+    let div = document.create_element("DIV").unwrap();
+    div.set_text_content(Some("Lorem ipsum dolor sit amet"));
+    insert_span(&div, ("a".into(), Mask::Byte(4), Mask::Byte(11)));
+    assert_eq!(
+        div.inner_html(),
+        r#"Lore<span class="a">m ipsum</span> dolor sit amet"#,
+    );
+    insert_span(&div, ("b".into(), Mask::Byte(7), Mask::Byte(18)));
+    assert_eq!(
+        div.inner_html(),
+        r#"Lore<span class="a">m i</span><span class="a b">psum</span><span class="b"> dolor </span>sit amet"#,
+    );
+    insert_span(&div, ("c".into(), Mask::Byte(15), Mask::Byte(23)));
+    assert_eq!(
+        div.inner_html(),
+        r#"Lore<span class="a">m i</span><span class="a b">psum</span><span class="b"> dol</span><span class="b c">or </span><span class="c">sit a</span>met"#,
+    );
+}
+
+pub fn remove_span<N>(n: N, s: (String, Mask, Mask))
+where
+    N: AsRef<web_sys::Node>,
+{
+    web_sys::console::log_1(&wasm_bindgen::JsValue::from(format!(
+        "remove_span({:?}, {:?})",
+        content(&n),
+        s,
+    )));
+    let n = n.as_ref();
+}
+
+#[wasm_bindgen_test]
+fn test_remove_span() {
+    let document = web_sys::window().unwrap().document().unwrap();
+
+    let div = document.create_element("DIV").unwrap();
+    div.set_inner_html(r#"Lor<span class="test">e</span>m ipsum!"#);
+    insert_span(&div, ("test".into(), Mask::Byte(3), Mask::Byte(4)));
+    assert_eq!(div.inner_html(), "Lorem ipsum!");
 
     let div = document.create_element("DIV").unwrap();
     div.set_text_content(Some("Lorem ipsum!"));

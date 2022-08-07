@@ -182,125 +182,27 @@ pub struct Props {
 #[derive(Debug)]
 pub struct Editor {
     div: NodeRef,
-}
-
-impl Editor {
-    fn merge(&mut self, spans: &[(Mask, Mask, String)]) {
-        log::info!("Editor::merge({self:?}, {spans:?})");
-
-        let mut edges: Vec<(Mask, Vec<(bool, String)>)> = vec![];
-        for span in spans {
-            match edges.binary_search_by_key(&span.0, |(k, _)| *k) {
-                Ok(pos) => {
-                    log::debug!("push {} to {:?} at idx {}", span.2, edges[pos], pos);
-                    edges.get_mut(pos).unwrap().1.push((true, span.2.clone()));
-                }
-                Err(pos) => {
-                    log::debug!("insert {:?} at idx {}", vec![span.2.clone()], pos);
-                    edges.insert(pos, (span.0, vec![(true, span.2.clone())]));
-                }
-            }
-
-            match edges.binary_search_by_key(&span.1, |(k, _)| *k) {
-                Ok(pos) => {
-                    log::debug!("push {} to {:?} at idx {}", span.2, edges[pos], pos);
-                    edges.get_mut(pos).unwrap().1.push((false, span.2.clone()));
-                }
-                Err(pos) => {
-                    log::debug!("insert {:?} at idx {}", vec![span.2.clone()], pos);
-                    edges.insert(pos, (span.1, vec![(false, span.2.clone())]));
-                }
-            }
-        }
-
-        let mut q: VecDeque<_> = edges.iter().collect();
-
-        log::debug!("edges={:?}", q);
-
-        let mut last = 0;
-        let mut o = 0;
-        let mut ni = self.contents();
-        while !ni.is_empty() {
-            let (s, e, _c) = ni.current();
-
-            if let Some(ed) = q.pop_front() {
-                assert!(Mask::Byte(s) < ed.0, "{:?} >= {:?}", Mask::Byte(s), ed.0);
-
-                fn upgrade(n: &Node) -> Element {
-                    if n.node_type() == Node::ELEMENT_NODE {
-                        return n.dyn_ref::<Element>().unwrap().clone();
-                    }
-
-                    let document = web_sys::window().unwrap().document().unwrap();
-                    let span = document.create_element("span").unwrap();
-
-                    span.set_text_content(Some(&n.text_content().unwrap()));
-
-                    n.parent_node()
-                        .expect("no parent")
-                        .replace_child(&span, n)
-                        .unwrap();
-
-                    span
-                }
-
-                if ed.0 < Mask::Byte(o + e) {
-                    let (head, tail) = ni.split(ed.0 - last);
-
-                    let head = upgrade(&head); // FIXME(s1g)
-                    let tail = upgrade(&tail);
-
-                    for c in (0..head.class_list().length())
-                        .into_iter()
-                        .map(|i| head.class_list().item(i).unwrap())
-                    {
-                        tail.class_list().add_1(&c).unwrap();
-                    }
-
-                    for change in &ed.1 {
-                        if change.0 {
-                            // if edge begins, append class
-                            tail.class_list().add_1(&change.1).unwrap();
-                        } else {
-                            // if it ends, remove it from classList
-                            // FIXME(s1g): could be more than one span
-                            let tail = upgrade(&tail);
-                            tail.class_list().remove_1(&change.1).unwrap();
-                        }
-                    }
-
-                    last = ed.0.ceil();
-                }
-            }
-
-            o = e;
-
-            ni.next();
-        }
-    }
-
-    fn contents(&self) -> NodeIter {
-        let node = self.div.cast::<Node>().unwrap();
-        NodeIter {
-            current: 0,
-            offset: 0,
-            node,
-        }
-    }
+    spans: Vec<(Mask, Mask, String)>,
 }
 
 impl Component for Editor {
     type Message = ();
     type Properties = Props;
 
-    fn create(_ctx: &Context<Self>) -> Self {
+    fn create(ctx: &Context<Self>) -> Self {
         Editor {
             div: NodeRef::default(),
+            spans: ctx.props().spans.clone(),
         }
     }
 
     fn changed(&mut self, ctx: &Context<Self>) -> bool {
-        self.merge(&ctx.props().spans);
+        for span in ctx.props().spans.iter().filter(|s| self.spans.contains(s)) {
+            utils::insert_span(
+                self.div.cast::<Node>().unwrap(),
+                (span.2.clone(), span.0, span.1),
+            );
+        }
 
         false // never render
     }
@@ -321,7 +223,7 @@ impl Component for Editor {
             node.append_child(&tn).unwrap();
         }
 
-        self.merge(&ctx.props().spans);
+        //self.merge(&ctx.props().spans);
     }
 
     fn view(&self, ctx: &Context<Self>) -> Html {
