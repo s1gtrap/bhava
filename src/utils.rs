@@ -366,8 +366,46 @@ fn test_upgrade() {
     parent.append_child(&child0).unwrap();
     let el = upgrade(&child0, "SPAN");
     assert_eq!(parent.inner_html(), "<span>Hello, world!</span>");
+}
 
-    el.dyn_ref::<Element>().unwrap().class_list();
+fn downgrade<N>(n: N) -> Text
+where
+    N: AsRef<web_sys::Node>,
+{
+    web_sys::console::log_1(&wasm_bindgen::JsValue::from(format!(
+        "downgrade({:?})",
+        content(&n),
+    )));
+    let document = web_sys::window().unwrap().document().unwrap();
+
+    let n = n.as_ref();
+    match n.node_type() {
+        Node::TEXT_NODE => n.clone().dyn_into::<Text>().unwrap().clone(),
+        Node::ELEMENT_NODE => {
+            let n: &Element = n.dyn_ref::<Element>().unwrap();
+
+            let new = document.create_text_node(&n.text_content().unwrap());
+            new.set_text_content(Some(&n.text_content().unwrap()));
+            insert_after(&n, &new);
+
+            n.parent_node().unwrap().remove_child(&n).unwrap();
+
+            new
+        }
+        _ => todo!(),
+    }
+}
+
+#[wasm_bindgen_test]
+fn test_downgrade() {
+    let document = web_sys::window().unwrap().document().unwrap();
+
+    let parent = document.create_element("DIV").unwrap();
+    let child0 = document.create_element("SPAN").unwrap();
+    child0.set_text_content(Some("Hello, world!"));
+    parent.append_child(&child0).unwrap();
+    let el = downgrade(&child0);
+    assert_eq!(parent.inner_html(), "Hello, world!");
 }
 
 fn find_edge<N>(n: N, s: Mask) -> Option<(usize, usize, Node)>
@@ -593,6 +631,50 @@ where
         s,
     )));
     let n = n.as_ref();
+    //let children = to_vec(n.child_nodes());
+    let mut inner = vec![];
+    if let Some((i, o, m)) = find_edge(n, s.1) {
+        if Mask::Byte(o) != s.1 {
+            // split starting edge
+            split_at(m, s.1.floor() - o);
+            inner.push(i + 1); // begin span on next elem
+        } else {
+            inner.push(i);
+        }
+    }
+
+    println!(
+        "{:?}",
+        (
+            n.dyn_ref::<Element>().unwrap().outer_html(),
+            to_vec(n.child_nodes())
+        )
+    );
+    /*panic!(
+        "{:?}",
+        (
+            n.dyn_ref::<Element>().unwrap().outer_html(),
+            to_vec(n.child_nodes())
+        )
+    );*/
+    if let Some((i, o, m)) = find_edge(n, s.2) {
+        // split starting edge
+        web_sys::console::log_1(&wasm_bindgen::JsValue::from(format!(
+            "remove_span({:?}, {:?})",
+            content(n),
+            s,
+        )));
+        split_at(m, s.2.floor() - o);
+        inner.push(i - 1);
+    }
+
+    let mut children = to_vec(n.child_nodes());
+    for i in inner[0]..=inner[1] {
+        let el = children[i].dyn_ref::<Element>().unwrap();
+        el.class_list().remove_1(&s.0).unwrap();
+        let el = downgrade(&children[i]);
+        children = to_vec(n.child_nodes());
+    }
 }
 
 #[wasm_bindgen_test]
@@ -601,7 +683,7 @@ fn test_remove_span() {
 
     let div = document.create_element("DIV").unwrap();
     div.set_inner_html(r#"Lor<span class="test">e</span>m ipsum!"#);
-    insert_span(&div, ("test".into(), Mask::Byte(3), Mask::Byte(4)));
+    remove_span(&div, ("test".into(), Mask::Byte(3), Mask::Byte(4)));
     assert_eq!(div.inner_html(), "Lorem ipsum!");
 
     let div = document.create_element("DIV").unwrap();
