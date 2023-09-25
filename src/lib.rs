@@ -197,12 +197,25 @@ impl Component for Editor {
     }
 
     fn changed(&mut self, ctx: &Context<Self>) -> bool {
-        for span in ctx.props().spans.iter().filter(|s| self.spans.contains(s)) {
+        log::warn!("changed props {:?}", ctx.props());
+
+        for span in self.spans.iter().filter(|s| !ctx.props().spans.contains(s)) {
+            log::warn!("removing {:?}", span);
+            utils::remove_span(
+                self.div.cast::<Node>().unwrap(),
+                (span.2.clone(), span.0, span.1),
+            );
+        }
+
+        for span in ctx.props().spans.iter().filter(|s| !self.spans.contains(s)) {
+            log::warn!("inserting {:?}", span);
             utils::insert_span(
                 self.div.cast::<Node>().unwrap(),
                 (span.2.clone(), span.0, span.1),
             );
         }
+
+        self.spans = ctx.props().spans.clone();
 
         false // never render
     }
